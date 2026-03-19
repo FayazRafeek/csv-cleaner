@@ -1,15 +1,16 @@
 /**
  * Smart CSV cleaner that detects and normalises columns for:
- *   Guest, Name, Email, Phone
+ *   First Name, Last Name, Email, Phone
  *
  * Strategy
  * ─────────
  * 1. Score every header against known aliases for each target field.
  * 2. Pick the best-scoring header per field (no column used twice).
  * 3. Name detection priority:
- *    a. "Guest Name" (or similar full-name column) → split into Guest + Name
- *    b. Explicit "First Name" + "Last Name" columns → use directly
- *    c. Any other full-name-like column → split
+ *    a. Explicit "First Name" + "Last Name" columns → use directly.
+ *    b. A bare "Guest" column → First Name. If found, also look for a bare
+ *       "Name" column as Last Name (only when Guest is present).
+ *    c. "Guest Name" or any other full-name column → split into First + Last.
  * 4. Drop all other columns.
  * 5. Preserve row count — blank values stay blank.
  */
@@ -25,8 +26,8 @@ const EXACT_MATCH_BONUS = 10;
 // ── Types ──────────────────────────────────────────────────────────────────
 
 export interface CleanedRow {
-  Guest: string;
-  Name: string;
+  "First Name": string;
+  "Last Name": string;
   Email: string;
   Phone: string;
 }
@@ -61,6 +62,7 @@ interface ColumnDetection {
 
 const ALIASES: Record<string, RegExp[]> = {
   // Explicit first-name columns only (must look unambiguously like "first name")
+  // Also includes bare "Guest" — treated as a first-name column when present.
   firstName: [
     /^first[\s_-]?name$/i,
     /^first$/i,
@@ -68,6 +70,7 @@ const ALIASES: Record<string, RegExp[]> = {
     /^f[\s_-]?name$/i,
     /^given[\s_-]?name$/i,
     /^forename$/i,
+    /^guest$/i,           // bare "Guest" column → First Name
   ],
   // Explicit last-name columns only
   lastName: [
@@ -89,7 +92,6 @@ const ALIASES: Record<string, RegExp[]> = {
     /^lead[\s_-]?name$/i,
     /^display[\s_-]?name$/i,
     /^member[\s_-]?name$/i,
-    /^guest$/i,
   ],
   email: [
     /^e[\s_-]?mail(s|[\s_-]?address(es)?)?$/i,
@@ -185,12 +187,26 @@ function detectColumns(headers: string[]): ColumnDetection {
 
   // Step 1: look for explicit first / last name columns
   const firstNameCol = bestMatch(headers, "firstName", usedHeaders);
-  if (firstNameCol) { usedHeaders.add(firstNameCol); detectedColumns["Guest"] = firstNameCol; }
+  if (firstNameCol) { usedHeaders.add(firstNameCol); detectedColumns["First Name"] = firstNameCol; }
 
-  const lastNameCol = bestMatch(headers, "lastName", usedHeaders);
-  if (lastNameCol) { usedHeaders.add(lastNameCol); detectedColumns["Name"] = lastNameCol; }
+  let lastNameCol = bestMatch(headers, "lastName", usedHeaders);
+  if (lastNameCol) { usedHeaders.add(lastNameCol); detectedColumns["Last Name"] = lastNameCol; }
 
-  // Step 2: look for a full-name column when at least one of first/last is missing
+  // Step 2: if first name came from a bare "Guest" column and no last name was
+  // found yet, try a bare "Name" column as the last name before falling back to
+  // full-name splitting. This handles the common pattern: Guest | Name | Email.
+  if (firstNameCol && /^guest$/i.test(firstNameCol.trim()) && !lastNameCol) {
+    const nameHeader = headers.find(
+      (h) => /^name$/i.test(h.trim()) && !usedHeaders.has(h),
+    );
+    if (nameHeader) {
+      lastNameCol = nameHeader;
+      usedHeaders.add(nameHeader);
+      detectedColumns["Last Name"] = nameHeader;
+    }
+  }
+
+  // Step 3: look for a full-name column when at least one of first/last is still missing
   let fullNameCol: string | null = null;
   if (!firstNameCol || !lastNameCol) {
     fullNameCol = bestMatch(headers, "fullName", usedHeaders);
@@ -200,7 +216,7 @@ function detectColumns(headers: string[]): ColumnDetection {
     }
   }
 
-  // Step 3: email & phone
+  // Step 4: email & phone
   const emailCol = bestMatch(headers, "email", usedHeaders);
   if (emailCol) { usedHeaders.add(emailCol); detectedColumns["Email"] = emailCol; }
   else warnings.push("No email column detected.");
@@ -269,21 +285,21 @@ export function cleanCsvData(rawRows: Record<string, string>[]): CleanResult {
     detectColumns(headers);
 
   const rows: CleanedRow[] = rawRows.map((raw) => {
-    let guest = getCell(raw, firstNameCol);
-    let name  = getCell(raw, lastNameCol);
+    let first = getCell(raw, firstNameCol);
+    let last  = getCell(raw, lastNameCol);
 
     if (fullNameCol) {
       const val = getCell(raw, fullNameCol);
       if (val) {
         const split = splitName(val);
-        if (!guest) guest = split.first;
-        if (!name)  name  = split.last;
+        if (!first) first = split.first;
+        if (!last)  last  = split.last;
       }
     }
 
     return {
-      Guest: guest,
-      Name: name,
+      "First Name": first,
+      "Last Name": last,
       Email: getCell(raw, emailCol),
       Phone: normalisePhone(getCell(raw, phoneCol)),
     };

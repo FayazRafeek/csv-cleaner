@@ -35,7 +35,7 @@ import { cleanCsvData, CleanResult, FULL_NAME_SPLIT_KEY } from "@/lib/csvCleaner
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
-const OUTPUT_COLUMNS = ["Guest", "Name", "Email", "Phone"] as const;
+const OUTPUT_COLUMNS = ["First Name", "Last Name", "Email", "Phone"] as const;
 type OutputColumn = (typeof OUTPUT_COLUMNS)[number];
 
 const PREVIEW_LIMIT = 5;
@@ -88,7 +88,7 @@ function buildMappingRows(detected: Record<string, string>): MappingRow[] {
   const splitSrc = detected[FULL_NAME_SPLIT_KEY];
   return OUTPUT_COLUMNS.flatMap<MappingRow>((output) => {
     if (detected[output]) return [{ output, source: detected[output] }];
-    if (splitSrc && (output === "Guest" || output === "Name")) return [{ output, source: splitSrc, note: "split" }];
+    if (splitSrc && (output === "First Name" || output === "Last Name")) return [{ output, source: splitSrc, note: "split" }];
     return [];
   });
 }
@@ -428,8 +428,8 @@ export default function Home() {
                         <Table.Body>
                           {previewRows.map((row, i) => (
                             <Table.Row key={i}>
-                              <Table.Cell>{row.Guest || <Text color="gray">—</Text>}</Table.Cell>
-                              <Table.Cell>{row.Name  || <Text color="gray">—</Text>}</Table.Cell>
+                              <Table.Cell>{row["First Name"] || <Text color="gray">—</Text>}</Table.Cell>
+                              <Table.Cell>{row["Last Name"]  || <Text color="gray">—</Text>}</Table.Cell>
                               <Table.Cell>{row.Email || <Text color="gray">—</Text>}</Table.Cell>
                               <Table.Cell>{row.Phone || <Text color="gray">—</Text>}</Table.Cell>
                             </Table.Row>
