@@ -7,6 +7,7 @@ import {
   Box,
   Button,
   Card,
+  Dialog,
   Flex,
   Heading,
   Text,
@@ -25,6 +26,7 @@ import {
   Download,
   FileSpreadsheet,
   GitMerge,
+  HelpCircle,
   Loader2,
   Scissors,
   Trash2,
@@ -169,6 +171,172 @@ function StepLine({ done }: { done: boolean }) {
   );
 }
 
+function HelpDialog() {
+  return (
+    <Dialog.Root>
+      <Dialog.Trigger>
+        <button
+          aria-label="How to use"
+          style={{
+            position: "fixed",
+            bottom: 24,
+            right: 24,
+            width: 44,
+            height: 44,
+            borderRadius: "50%",
+            background: "var(--indigo-9)",
+            color: "white",
+            border: "none",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            boxShadow: "0 4px 14px rgba(0,0,0,0.25)",
+            zIndex: 100,
+            transition: "background 0.15s",
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = "var(--indigo-10)")}
+          onMouseLeave={(e) => (e.currentTarget.style.background = "var(--indigo-9)")}
+        >
+          <HelpCircle size={22} strokeWidth={2} />
+        </button>
+      </Dialog.Trigger>
+
+      <Dialog.Content maxWidth="560px" style={{ padding: "28px 32px" }}>
+        <Dialog.Title mb="1">How to Use — Campaign Data Cleaner</Dialog.Title>
+        <Dialog.Description size="2" color="gray" mb="5">
+          A quick guide for the operations team.
+        </Dialog.Description>
+
+        {/* What it does */}
+        <Section label="What does this tool do?">
+          <Text size="2" as="p">
+            This tool takes a messy contact file from any source and outputs a clean, standardised CSV
+            with exactly four columns: <strong>First Name</strong>, <strong>Last Name</strong>,{" "}
+            <strong>Email</strong>, and <strong>Phone</strong>. All other columns are automatically removed.
+          </Text>
+        </Section>
+
+        <Separator size="4" my="4" />
+
+        {/* Where files come from */}
+        <Section label="Where do the input files come from?">
+          <Flex direction="column" gap="2">
+            <SourceRow
+              source="OpenTable"
+              hint="Export the guest list from the Reservations or Marketing tab as a .csv or .xlsx file."
+            />
+            <SourceRow
+              source="Yelp"
+              hint="Download contacts from Yelp for Business as a CSV export."
+            />
+            <SourceRow
+              source="Client direct"
+              hint="Files sent directly by the client — could be a spreadsheet in any format (.csv, .xlsx, .xls)."
+            />
+          </Flex>
+        </Section>
+
+        <Separator size="4" my="4" />
+
+        {/* Input columns */}
+        <Section label="What columns are in the input file?">
+          <Text size="2" color="gray" as="p" mb="3">
+            The tool is smart — it doesn&apos;t require exact column names. It will recognise variations like:
+          </Text>
+          <Flex direction="column" gap="2">
+            <ColRow output="First Name" examples={["Guest", "First Name", "First", "Given Name", "fname"]} />
+            <ColRow output="Last Name"  examples={["Name (when Guest is also present)", "Last Name", "Last", "Surname"]} />
+            <ColRow output="Email"      examples={["Email", "Email Address", "Work Email", "Contact Email"]} />
+            <ColRow output="Phone"      examples={["Phone", "Mobile", "Cell", "Telephone", "Ph Num"]} />
+          </Flex>
+          <Text size="2" color="gray" as="p" mt="3">
+            If the file only has a single <strong>Guest Name</strong> or <strong>Full Name</strong> column,
+            the tool will automatically split it into First Name and Last Name.
+          </Text>
+        </Section>
+
+        <Separator size="4" my="4" />
+
+        {/* Steps */}
+        <Section label="Step-by-step">
+          <Flex direction="column" gap="2">
+            {[
+              "Export or save the file from OpenTable, Yelp, or wherever the client sent it.",
+              "Click the upload area (or drag-and-drop) and select the file.",
+              "Wait a moment — the tool converts and cleans it automatically.",
+              "Click \"Download Cleaned CSV\" to save the output file.",
+              "Optionally open \"View Processed Info\" to see exactly which columns were used and which were ignored.",
+            ].map((step, i) => (
+              <Flex key={i} gap="3" align="start">
+                <Flex align="center" justify="center" flexShrink="0" style={{
+                  width: 22, height: 22, borderRadius: "50%",
+                  background: "var(--indigo-3)", color: "var(--indigo-11)",
+                  fontSize: 11, fontWeight: 700, marginTop: 1,
+                }}>
+                  {i + 1}
+                </Flex>
+                <Text size="2">{step}</Text>
+              </Flex>
+            ))}
+          </Flex>
+        </Section>
+
+        <Separator size="4" my="4" />
+
+        {/* Tip */}
+        <Callout.Root color="indigo" size="1">
+          <Callout.Icon><AlertTriangle size={14} /></Callout.Icon>
+          <Callout.Text size="2">
+            The row count is always preserved — every contact in the original file appears in the output,
+            even if some fields (like phone) are blank.
+          </Callout.Text>
+        </Callout.Root>
+
+        <Flex justify="end" mt="5">
+          <Dialog.Close>
+            <Button variant="soft">Got it</Button>
+          </Dialog.Close>
+        </Flex>
+      </Dialog.Content>
+    </Dialog.Root>
+  );
+}
+
+/** Small labelled section wrapper used inside HelpDialog. */
+function Section({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <Box>
+      <Text size="2" weight="bold" as="div" mb="2">{label}</Text>
+      {children}
+    </Box>
+  );
+}
+
+/** A single source row in the "where files come from" list. */
+function SourceRow({ source, hint }: { source: string; hint: string }) {
+  return (
+    <Flex gap="3" align="start">
+      <Badge color="indigo" variant="soft" size="1" style={{ marginTop: 1, flexShrink: 0 }}>
+        {source}
+      </Badge>
+      <Text size="2" color="gray">{hint}</Text>
+    </Flex>
+  );
+}
+
+/** One row in the column-recognition table. */
+function ColRow({ output, examples }: { output: string; examples: string[] }) {
+  return (
+    <Flex gap="3" align="start">
+      <Badge color="green" variant="soft" size="1" style={{ marginTop: 1, flexShrink: 0, minWidth: 72, justifyContent: "center" }}>
+        {output}
+      </Badge>
+      <Text size="2" color="gray">{examples.join(", ")}</Text>
+    </Flex>
+  );
+}
+
 // ── Page ───────────────────────────────────────────────────────────────────
 
 export default function Home() {
@@ -253,7 +421,7 @@ export default function Home() {
       <Box mb="6" style={{ textAlign: "center" }}>
         <Heading size="7" mb="1">Campaign Data Cleaner</Heading>
         <Text color="gray" size="3">
-          Upload a CSV or Excel file — we'll extract Guest, Name, Email &amp; Phone.
+          Upload a CSV or Excel file — we&apos;ll extract First Name, Last Name, Email &amp; Phone.
         </Text>
       </Box>
 
@@ -453,6 +621,9 @@ export default function Home() {
           onChange={handleFileChange}
         />
       </Card>
+
+      {/* Fixed help button + dialog */}
+      <HelpDialog />
 
       <style>{SPIN_KEYFRAMES}</style>
     </Flex>
