@@ -11,14 +11,19 @@
  *    b. A bare "Guest" column → First Name. If found, also look for a bare
  *       "Name" column as Last Name (only when Guest is present).
  *    c. "Guest Name" or any other full-name column → split into First + Last.
- * 4. Drop all other columns.
- * 5. Preserve row count — blank values stay blank.
+ * 4. If a restaurant marketing opt-in column exists, keep only rows with an
+ *    affirmative Yes (word or clear yes token; see isAffirmativeOptInValue).
+ * 5. Drop all other columns.
+ * 6. Preserve row count for unfiltered output — filtered runs have fewer rows.
  */
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
 /** Key used in `detectedColumns` when a full-name column is split. */
 export const FULL_NAME_SPLIT_KEY = "Full Name (split)" as const;
+
+/** Key when rows are filtered by restaurant marketing opt-in (Yes only). */
+export const MARKETING_OPT_IN_FILTER_KEY = "Marketing opt-in (Yes only)" as const;
 
 /** Score bonus applied to exact alias matches so they always beat fuzzy matches. */
 const EXACT_MATCH_BONUS = 10;
@@ -268,6 +273,51 @@ function getCell(raw: Record<string, string>, col: string | null): string {
   return col ? (raw[col] ?? "").trim() : "";
 }
 
+// ── Restaurant marketing opt-in filter ─────────────────────────────────────
+
+function scoreMarketingOptInHeader(header: string): number {
+  const h = header.trim();
+  const exact = new RegExp(
+    `^opted[\\s-]?in\\s+to\\s+restaurant\\s+marketing${HDR_SFX}$`,
+    "i",
+  );
+  if (exact.test(h)) return 100;
+  if (
+    /\brestaurant\b/i.test(h) &&
+    /\bmarketing\b/i.test(h) &&
+    /opted|opt[\s_-]?in/i.test(h)
+  ) {
+    return 50;
+  }
+  return 0;
+}
+
+function detectMarketingOptInColumn(headers: string[]): string | null {
+  let best: string | null = null;
+  let bestScore = 0;
+  for (const h of headers) {
+    const s = scoreMarketingOptInHeader(h);
+    if (s > bestScore) {
+      bestScore = s;
+      best = h;
+    }
+  }
+  return bestScore > 0 ? best : null;
+}
+
+/** True when the cell clearly indicates opt-in Yes (flexible phrasing, not substring traps like "eyes"). */
+export function isAffirmativeOptInValue(raw: string): boolean {
+  const v = raw.trim();
+  if (!v) return false;
+  if (/\byes\b/i.test(v)) return true;
+  const compact = v.replace(/\s+/g, "").toLowerCase();
+  if (compact === "y" || compact === "yes") return true;
+  if (/^y(es)?[^a-z]*$/i.test(v.trim())) return true;
+  const lower = v.toLowerCase();
+  if (/\byeah\b|\byep\b|\byup\b/i.test(lower)) return true;
+  return false;
+}
+
 // ── Main export ────────────────────────────────────────────────────────────
 
 export function cleanCsvData(rawRows: Record<string, string>[]): CleanResult {
@@ -288,7 +338,30 @@ export function cleanCsvData(rawRows: Record<string, string>[]): CleanResult {
   const { firstNameCol, lastNameCol, fullNameCol, emailCol, phoneCol, detectedColumns, usedHeaders, warnings } =
     detectColumns(headers);
 
-  const rows: CleanedRow[] = rawRows.map((raw) => {
+  const marketingOptInCol = detectMarketingOptInColumn(headers);
+  let rowsToClean = rawRows;
+  if (marketingOptInCol) {
+    usedHeaders.add(marketingOptInCol);
+    detectedColumns[MARKETING_OPT_IN_FILTER_KEY] = marketingOptInCol;
+    const before = rawRows.length;
+    rowsToClean = rawRows.filter((raw) =>
+      isAffirmativeOptInValue(getCell(raw, marketingOptInCol)),
+    );
+    const removed = before - rowsToClean.length;
+    if (removed > 0) {
+      if (rowsToClean.length === 0) {
+        warnings.push(
+          "Marketing opt-in: no rows had an affirmative Yes; output is empty.",
+        );
+      } else {
+        warnings.push(
+          `Marketing opt-in: kept rows with an affirmative Yes only (removed ${removed}).`,
+        );
+      }
+    }
+  }
+
+  const rows: CleanedRow[] = rowsToClean.map((raw) => {
     let first = getCell(raw, firstNameCol);
     let last  = getCell(raw, lastNameCol);
 
