@@ -60,6 +60,9 @@ interface ColumnDetection {
 
 // ── Alias lists ────────────────────────────────────────────────────────────
 
+/** Trailing export labels, e.g. "(Restricted PII)", on otherwise standard headers */
+const HDR_SFX = String.raw`(?:\s*\([^)]*\))*\s*`;
+
 const ALIASES: Record<string, RegExp[]> = {
   // Explicit first-name columns only (must look unambiguously like "first name")
   // Also includes bare "Guest" — treated as a first-name column when present.
@@ -83,15 +86,15 @@ const ALIASES: Record<string, RegExp[]> = {
   ],
   // Full / combined name columns — "Guest Name" is highest priority
   fullName: [
-    /^guest[\s_-]?name$/i,        // highest priority
-    /^(full[\s_-]?)?name$/i,
-    /^contact[\s_-]?name$/i,
-    /^client[\s_-]?name$/i,
-    /^customer[\s_-]?name$/i,
-    /^prospect[\s_-]?name$/i,
-    /^lead[\s_-]?name$/i,
-    /^display[\s_-]?name$/i,
-    /^member[\s_-]?name$/i,
+    new RegExp(`^guest[\\s_-]?name${HDR_SFX}$`, "i"),
+    new RegExp(`^(full[\\s_-]?)?name${HDR_SFX}$`, "i"),
+    new RegExp(`^contact[\\s_-]?name${HDR_SFX}$`, "i"),
+    new RegExp(`^client[\\s_-]?name${HDR_SFX}$`, "i"),
+    new RegExp(`^customer[\\s_-]?name${HDR_SFX}$`, "i"),
+    new RegExp(`^prospect[\\s_-]?name${HDR_SFX}$`, "i"),
+    new RegExp(`^lead[\\s_-]?name${HDR_SFX}$`, "i"),
+    new RegExp(`^display[\\s_-]?name${HDR_SFX}$`, "i"),
+    new RegExp(`^member[\\s_-]?name${HDR_SFX}$`, "i"),
   ],
   email: [
     /^e[\s_-]?mail(s|[\s_-]?address(es)?)?$/i,
@@ -126,7 +129,7 @@ const ALIASES: Record<string, RegExp[]> = {
  *  - firstName fuzzy: "first" must appear right before "name" (or alone)
  *  - lastName fuzzy:  "last"  must appear right before "name" (or alone as "surname")
  *    → prevents "Last Trans. Date" from accidentally matching
- *  - fullName fuzzy:  header ends with "name" or equals "name"
+ *  - fullName fuzzy:  "full name" phrase, or header ends with "name", or equals "name"
  *  - email fuzzy:     "email" anywhere
  *  - phone fuzzy:     "phone" / "mobile" / "cell" anywhere
  */
@@ -155,7 +158,8 @@ function scoreHeader(header: string, field: keyof typeof ALIASES): number {
       return /\blast[\s_-]?name\b/i.test(h) || /^last$/i.test(h) || /^surname$/i.test(h) ? 1 : 0;
 
     case "fullName":
-      // Header ends with "name" (e.g. "guest name", "full name") or is exactly "name"
+      if (/\bfull[\s_-]+name\b/i.test(h)) return 1;
+      if (/\bguest[\s_-]+name\b/i.test(h)) return 1;
       return /\bname$/i.test(h) ? 1 : 0;
 
     default:
