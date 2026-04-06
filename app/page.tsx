@@ -95,11 +95,70 @@ function buildMappingRows(detected: Record<string, string>): MappingRow[] {
   });
 }
 
-function getDownloadColumns(result: CleanResult): string[] {
-  const cols = [...OUTPUT_COLUMNS] as string[];
-  if (result.stats.detectedColumns["Visit Date"]) cols.push("Visit Date");
-  if (result.stats.detectedColumns["Visit time"]) cols.push("Visit time");
-  return cols;
+function getDownloadColumns(): string[] {
+  return [...OUTPUT_COLUMNS] as string[];
+}
+
+function buildSummaryReport(result: CleanResult, fileName: string): string {
+  const nowIso = new Date().toISOString();
+  const baseName = fileName.replace(/\.(csv|xlsx?)$/i, "");
+  const { stats } = result;
+
+  const lines: string[] = [];
+  lines.push("Campaign Data Cleaner — Processing Summary");
+  lines.push("");
+  lines.push(`File: ${fileName || "(unknown)"}`);
+  lines.push(`Report: ${baseName || "(unknown)"}_summary.txt`);
+  lines.push(`Timestamp (UTC): ${nowIso}`);
+  lines.push("");
+
+  lines.push("Counts");
+  lines.push(`- Input rows: ${stats.inputRows}`);
+  lines.push(`- Removed by marketing opt-in (Yes only): ${stats.marketingOptInRemoved}`);
+  lines.push(`- Removed for missing contact (no email and no phone): ${stats.missingContactRemoved}`);
+  lines.push(`- Output rows: ${stats.outputRows}`);
+  lines.push("");
+
+  lines.push("Detected column mapping (output -> input)");
+  const preferredOrder = [
+    "First Name",
+    "Last Name",
+    FULL_NAME_SPLIT_KEY,
+    "Email",
+    "Phone",
+    "Marketing opt-in (Yes only)",
+  ];
+  const mappingKeys = Object.keys(stats.detectedColumns);
+  const orderedKeys = [
+    ...preferredOrder.filter((k) => mappingKeys.includes(k)),
+    ...mappingKeys.filter((k) => !preferredOrder.includes(k)).sort((a, b) => a.localeCompare(b)),
+  ];
+  if (orderedKeys.length === 0) {
+    lines.push("(none)");
+  } else {
+    for (const k of orderedKeys) {
+      lines.push(`- ${k} -> ${stats.detectedColumns[k]}`);
+    }
+  }
+  lines.push("");
+
+  lines.push(`Ignored columns (${stats.ignoredColumns.length})`);
+  if (stats.ignoredColumns.length === 0) {
+    lines.push("(none)");
+  } else {
+    for (const col of stats.ignoredColumns) lines.push(`- ${col}`);
+  }
+  lines.push("");
+
+  lines.push(`Warnings (${stats.warnings.length})`);
+  if (stats.warnings.length === 0) {
+    lines.push("(none)");
+  } else {
+    for (const w of stats.warnings) lines.push(`- ${w}`);
+  }
+
+  lines.push("");
+  return lines.join("\n");
 }
 
 // ── Sub-components ─────────────────────────────────────────────────────────
@@ -394,12 +453,24 @@ export default function Home() {
 
   const handleDownload = () => {
     if (!result) return;
-    const csv = Papa.unparse(result.rows, { columns: getDownloadColumns(result) });
+    const csv = Papa.unparse(result.rows, { columns: getDownloadColumns() });
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
     a.download = `${fileName.replace(/\.(csv|xlsx?)$/i, "")}_cleaned.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadSummary = () => {
+    if (!result) return;
+    const report = buildSummaryReport(result, fileName);
+    const blob = new Blob([report], { type: "text/plain;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${fileName.replace(/\.(csv|xlsx?)$/i, "")}_summary.txt`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -477,6 +548,10 @@ export default function Home() {
           <Flex direction="column" gap="4">
             <Button size="3" variant="classic" onClick={handleDownload} style={{ width: "100%" }}>
               <Download size={17} /> Download Cleaned CSV
+            </Button>
+
+            <Button size="2" variant="soft" onClick={handleDownloadSummary} style={{ width: "100%" }}>
+              <Download size={16} /> Download Summary
             </Button>
 
             <Button size="1" variant="ghost" color="gray" onClick={handleReset} style={{ width: "100%" }} mt="5">

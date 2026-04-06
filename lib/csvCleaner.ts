@@ -35,15 +35,15 @@ export interface CleanedRow {
   "Last Name": string;
   Email: string;
   Phone: string;
-  /** If present in input, passed through without trimming/normalization. */
-  "Visit Date"?: string;
-  /** If present in input, passed through without trimming/normalization. */
-  "Visit time"?: string;
 }
 
 export interface CleanStats {
   inputRows: number;
   outputRows: number;
+  /** Rows removed by the marketing opt-in (Yes only) filter, if applied. */
+  marketingOptInRemoved: number;
+  /** Rows removed because they had neither email nor phone. */
+  missingContactRemoved: number;
   /** Maps an output field name (or FULL_NAME_SPLIT_KEY) to the original header. */
   detectedColumns: Record<string, string>;
   /** Input headers that were not mapped to any output column. */
@@ -62,8 +62,6 @@ interface ColumnDetection {
   fullNameCol: string | null;
   emailCol: string | null;
   phoneCol: string | null;
-  visitDateCol: string | null;
-  visitTimeCol: string | null;
   detectedColumns: Record<string, string>;
   usedHeaders: Set<string>;
   warnings: string[];
@@ -240,21 +238,6 @@ function detectColumns(headers: string[]): ColumnDetection {
   if (phoneCol) { usedHeaders.add(phoneCol); detectedColumns["Phone"] = phoneCol; }
   else warnings.push("No phone column detected.");
 
-  // Step 5: optional passthrough columns (keep as-is when present)
-  const visitDateCol =
-    headers.find((h) => new RegExp(`^visit\\s*date${HDR_SFX}$`, "i").test(h.trim())) ?? null;
-  if (visitDateCol && !usedHeaders.has(visitDateCol)) {
-    usedHeaders.add(visitDateCol);
-    detectedColumns["Visit Date"] = visitDateCol;
-  }
-
-  const visitTimeCol =
-    headers.find((h) => new RegExp(`^visit\\s*time${HDR_SFX}$`, "i").test(h.trim())) ?? null;
-  if (visitTimeCol && !usedHeaders.has(visitTimeCol)) {
-    usedHeaders.add(visitTimeCol);
-    detectedColumns["Visit time"] = visitTimeCol;
-  }
-
   if (!firstNameCol && !lastNameCol && !fullNameCol) {
     warnings.push("No name column detected.");
   }
@@ -265,8 +248,6 @@ function detectColumns(headers: string[]): ColumnDetection {
     fullNameCol,
     emailCol,
     phoneCol,
-    visitDateCol,
-    visitTimeCol,
     detectedColumns,
     usedHeaders,
     warnings,
@@ -303,10 +284,6 @@ function normalisePhone(raw: string): string {
 
 function getCell(raw: Record<string, string>, col: string | null): string {
   return col ? (raw[col] ?? "").trim() : "";
-}
-
-function getCellAsIs(raw: Record<string, string>, col: string | null): string {
-  return col ? (raw[col] ?? "") : "";
 }
 
 // ── Restaurant marketing opt-in filter ─────────────────────────────────────
@@ -363,6 +340,8 @@ export function cleanCsvData(rawRows: Record<string, string>[]): CleanResult {
       stats: {
         inputRows: 0,
         outputRows: 0,
+        marketingOptInRemoved: 0,
+        missingContactRemoved: 0,
         detectedColumns: {},
         ignoredColumns: [],
         warnings: ["Input file is empty."],
@@ -377,8 +356,6 @@ export function cleanCsvData(rawRows: Record<string, string>[]): CleanResult {
     fullNameCol,
     emailCol,
     phoneCol,
-    visitDateCol,
-    visitTimeCol,
     detectedColumns,
     usedHeaders,
     warnings,
@@ -386,6 +363,7 @@ export function cleanCsvData(rawRows: Record<string, string>[]): CleanResult {
 
   const marketingOptInCol = detectMarketingOptInColumn(headers);
   let rowsToClean = rawRows;
+  let marketingOptInRemoved = 0;
   if (marketingOptInCol) {
     usedHeaders.add(marketingOptInCol);
     detectedColumns[MARKETING_OPT_IN_FILTER_KEY] = marketingOptInCol;
@@ -393,15 +371,15 @@ export function cleanCsvData(rawRows: Record<string, string>[]): CleanResult {
     rowsToClean = rawRows.filter((raw) =>
       isAffirmativeOptInValue(getCell(raw, marketingOptInCol)),
     );
-    const removed = before - rowsToClean.length;
-    if (removed > 0) {
+    marketingOptInRemoved = before - rowsToClean.length;
+    if (marketingOptInRemoved > 0) {
       if (rowsToClean.length === 0) {
         warnings.push(
           "Marketing opt-in: no rows had an affirmative Yes; output is empty.",
         );
       } else {
         warnings.push(
-          `Marketing opt-in: kept rows with an affirmative Yes only (removed ${removed}).`,
+          `Marketing opt-in: kept rows with an affirmative Yes only (removed ${marketingOptInRemoved}).`,
         );
       }
     }
@@ -427,9 +405,6 @@ export function cleanCsvData(rawRows: Record<string, string>[]): CleanResult {
       Phone: normalisePhone(getCell(raw, phoneCol)),
     };
 
-    if (visitDateCol) out["Visit Date"] = getCellAsIs(raw, visitDateCol);
-    if (visitTimeCol) out["Visit time"] = getCellAsIs(raw, visitTimeCol);
-
     return out;
   });
 
@@ -439,12 +414,12 @@ export function cleanCsvData(rawRows: Record<string, string>[]): CleanResult {
     return hasEmail || hasPhone;
   });
 
-  const removedNoContact = rowsUnfiltered.length - rows.length;
-  if (removedNoContact > 0) {
+  const missingContactRemoved = rowsUnfiltered.length - rows.length;
+  if (missingContactRemoved > 0) {
     if (rows.length === 0) {
       warnings.push("Contact info: no rows had either email or phone; output is empty.");
     } else {
-      warnings.push(`Contact info: removed ${removedNoContact} row(s) with neither email nor phone.`);
+      warnings.push(`Contact info: removed ${missingContactRemoved} row(s) with neither email nor phone.`);
     }
   }
 
@@ -453,6 +428,8 @@ export function cleanCsvData(rawRows: Record<string, string>[]): CleanResult {
     stats: {
       inputRows: rawRows.length,
       outputRows: rows.length,
+      marketingOptInRemoved,
+      missingContactRemoved,
       detectedColumns,
       ignoredColumns: headers.filter((h) => !usedHeaders.has(h)),
       warnings,
