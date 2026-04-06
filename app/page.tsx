@@ -95,6 +95,13 @@ function buildMappingRows(detected: Record<string, string>): MappingRow[] {
   });
 }
 
+function getDownloadColumns(result: CleanResult): string[] {
+  const cols = [...OUTPUT_COLUMNS] as string[];
+  if (result.stats.detectedColumns["Visit Date"]) cols.push("Visit Date");
+  if (result.stats.detectedColumns["Visit time"]) cols.push("Visit time");
+  return cols;
+}
+
 // ── Sub-components ─────────────────────────────────────────────────────────
 
 function SpinnerPanel({ message }: { message: React.ReactNode }) {
@@ -387,7 +394,7 @@ export default function Home() {
 
   const handleDownload = () => {
     if (!result) return;
-    const csv = Papa.unparse(result.rows, { columns: [...OUTPUT_COLUMNS] });
+    const csv = Papa.unparse(result.rows, { columns: getDownloadColumns(result) });
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");

@@ -35,6 +35,10 @@ export interface CleanedRow {
   "Last Name": string;
   Email: string;
   Phone: string;
+  /** If present in input, passed through without trimming/normalization. */
+  "Visit Date"?: string;
+  /** If present in input, passed through without trimming/normalization. */
+  "Visit time"?: string;
 }
 
 export interface CleanStats {
@@ -58,6 +62,8 @@ interface ColumnDetection {
   fullNameCol: string | null;
   emailCol: string | null;
   phoneCol: string | null;
+  visitDateCol: string | null;
+  visitTimeCol: string | null;
   detectedColumns: Record<string, string>;
   usedHeaders: Set<string>;
   warnings: string[];
@@ -234,11 +240,37 @@ function detectColumns(headers: string[]): ColumnDetection {
   if (phoneCol) { usedHeaders.add(phoneCol); detectedColumns["Phone"] = phoneCol; }
   else warnings.push("No phone column detected.");
 
+  // Step 5: optional passthrough columns (keep as-is when present)
+  const visitDateCol =
+    headers.find((h) => new RegExp(`^visit\\s*date${HDR_SFX}$`, "i").test(h.trim())) ?? null;
+  if (visitDateCol && !usedHeaders.has(visitDateCol)) {
+    usedHeaders.add(visitDateCol);
+    detectedColumns["Visit Date"] = visitDateCol;
+  }
+
+  const visitTimeCol =
+    headers.find((h) => new RegExp(`^visit\\s*time${HDR_SFX}$`, "i").test(h.trim())) ?? null;
+  if (visitTimeCol && !usedHeaders.has(visitTimeCol)) {
+    usedHeaders.add(visitTimeCol);
+    detectedColumns["Visit time"] = visitTimeCol;
+  }
+
   if (!firstNameCol && !lastNameCol && !fullNameCol) {
     warnings.push("No name column detected.");
   }
 
-  return { firstNameCol, lastNameCol, fullNameCol, emailCol, phoneCol, detectedColumns, usedHeaders, warnings };
+  return {
+    firstNameCol,
+    lastNameCol,
+    fullNameCol,
+    emailCol,
+    phoneCol,
+    visitDateCol,
+    visitTimeCol,
+    detectedColumns,
+    usedHeaders,
+    warnings,
+  };
 }
 
 // ── Name splitting ─────────────────────────────────────────────────────────
@@ -271,6 +303,10 @@ function normalisePhone(raw: string): string {
 
 function getCell(raw: Record<string, string>, col: string | null): string {
   return col ? (raw[col] ?? "").trim() : "";
+}
+
+function getCellAsIs(raw: Record<string, string>, col: string | null): string {
+  return col ? (raw[col] ?? "") : "";
 }
 
 // ── Restaurant marketing opt-in filter ─────────────────────────────────────
@@ -335,8 +371,18 @@ export function cleanCsvData(rawRows: Record<string, string>[]): CleanResult {
   }
 
   const headers = Object.keys(rawRows[0]);
-  const { firstNameCol, lastNameCol, fullNameCol, emailCol, phoneCol, detectedColumns, usedHeaders, warnings } =
-    detectColumns(headers);
+  const {
+    firstNameCol,
+    lastNameCol,
+    fullNameCol,
+    emailCol,
+    phoneCol,
+    visitDateCol,
+    visitTimeCol,
+    detectedColumns,
+    usedHeaders,
+    warnings,
+  } = detectColumns(headers);
 
   const marketingOptInCol = detectMarketingOptInColumn(headers);
   let rowsToClean = rawRows;
@@ -361,7 +407,7 @@ export function cleanCsvData(rawRows: Record<string, string>[]): CleanResult {
     }
   }
 
-  const rows: CleanedRow[] = rowsToClean.map((raw) => {
+  const rowsUnfiltered: CleanedRow[] = rowsToClean.map((raw) => {
     let first = getCell(raw, firstNameCol);
     let last  = getCell(raw, lastNameCol);
 
@@ -374,13 +420,33 @@ export function cleanCsvData(rawRows: Record<string, string>[]): CleanResult {
       }
     }
 
-    return {
+    const out: CleanedRow = {
       "First Name": first,
       "Last Name": last,
       Email: getCell(raw, emailCol),
       Phone: normalisePhone(getCell(raw, phoneCol)),
     };
+
+    if (visitDateCol) out["Visit Date"] = getCellAsIs(raw, visitDateCol);
+    if (visitTimeCol) out["Visit time"] = getCellAsIs(raw, visitTimeCol);
+
+    return out;
   });
+
+  const rows = rowsUnfiltered.filter((r) => {
+    const hasEmail = r.Email.trim().length > 0;
+    const hasPhone = r.Phone.trim().length > 0;
+    return hasEmail || hasPhone;
+  });
+
+  const removedNoContact = rowsUnfiltered.length - rows.length;
+  if (removedNoContact > 0) {
+    if (rows.length === 0) {
+      warnings.push("Contact info: no rows had either email or phone; output is empty.");
+    } else {
+      warnings.push(`Contact info: removed ${removedNoContact} row(s) with neither email nor phone.`);
+    }
+  }
 
   return {
     rows,
