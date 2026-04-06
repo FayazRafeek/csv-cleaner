@@ -114,7 +114,7 @@ function buildSummaryReport(result: CleanResult, fileName: string): string {
 
   lines.push("Counts");
   lines.push(`- Input rows: ${stats.inputRows}`);
-  lines.push(`- Removed by marketing opt-in (Yes only): ${stats.marketingOptInRemoved}`);
+  lines.push(`- Removed by marketing opt-in filter: ${stats.marketingOptInRemoved}`);
   lines.push(`- Removed for missing contact (no email and no phone): ${stats.missingContactRemoved}`);
   lines.push(`- Output rows: ${stats.outputRows}`);
   lines.push("");

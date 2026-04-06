@@ -290,18 +290,29 @@ function getCell(raw: Record<string, string>, col: string | null): string {
 
 function scoreMarketingOptInHeader(header: string): number {
   const h = header.trim();
-  const exact = new RegExp(
-    `^opted[\\s-]?in\\s+to\\s+restaurant\\s+marketing${HDR_SFX}$`,
-    "i",
-  );
-  if (exact.test(h)) return 100;
-  if (
-    /\brestaurant\b/i.test(h) &&
-    /\bmarketing\b/i.test(h) &&
-    /opted|opt[\s_-]?in/i.test(h)
-  ) {
+  const lower = h.toLowerCase();
+
+  // Highest confidence: explicit OpenTable-style wording.
+  const restaurantExact = new RegExp(`^opted[\\s-]?in\\s+to\\s+restaurant\\s+marketing${HDR_SFX}$`, "i");
+  if (restaurantExact.test(h)) return 100;
+
+  // Very strong: "Marketing Opt-In" (and common punctuation/spacing variants).
+  // Examples: "Marketing Opt-In", "Marketing Opt In", "marketing_opt_in", "Marketing opt-in (whatever)"
+  const marketingOptIn = new RegExp(`^marketing[\\s_-]*opt[\\s_-]*in${HDR_SFX}$`, "i");
+  if (marketingOptIn.test(h)) return 95;
+
+  // Strong: consent/permission fields that clearly imply marketing opt-in.
+  // Examples: "Marketing Consent", "Opt in to marketing", "Email marketing opt in"
+  const consentLike =
+    /\bmarketing\b/.test(lower) &&
+    (/\bopt\b/.test(lower) || /\boptin\b/.test(lower) || /\bconsent\b/.test(lower) || /\bpermission\b/.test(lower));
+  if (consentLike) return 70;
+
+  // Medium: restaurant + marketing + opt-in.
+  if (/\brestaurant\b/.test(lower) && /\bmarketing\b/.test(lower) && (/opted/.test(lower) || /\bopt[\s_-]*in\b/.test(lower))) {
     return 50;
   }
+
   return 0;
 }
 
@@ -322,12 +333,22 @@ function detectMarketingOptInColumn(headers: string[]): string | null {
 export function isAffirmativeOptInValue(raw: string): boolean {
   const v = raw.trim();
   if (!v) return false;
-  if (/\byes\b/i.test(v)) return true;
-  const compact = v.replace(/\s+/g, "").toLowerCase();
+
+  // Normalize common exports (boolean-ish, numeric, and noisy punctuation)
+  const compact = v
+    .replace(/[’']/g, "")          // smart/apostrophes
+    .replace(/[\s_-]+/g, "")       // spaces/underscores/dashes
+    .replace(/[.,;:()]/g, "")      // common punctuation
+    .toLowerCase();
+
+  // Strict tokens only (avoid substring traps like "eyes").
   if (compact === "y" || compact === "yes") return true;
-  if (/^y(es)?[^a-z]*$/i.test(v.trim())) return true;
-  const lower = v.toLowerCase();
-  if (/\byeah\b|\byep\b|\byup\b/i.test(lower)) return true;
+  if (compact === "true" || compact === "t") return true;
+  if (compact === "1") return true;
+
+  // Friendly variants that often appear in exports.
+  if (/^(yeah|yep|yup)$/.test(compact)) return true;
+
   return false;
 }
 
@@ -375,11 +396,11 @@ export function cleanCsvData(rawRows: Record<string, string>[]): CleanResult {
     if (marketingOptInRemoved > 0) {
       if (rowsToClean.length === 0) {
         warnings.push(
-          "Marketing opt-in: no rows had an affirmative Yes; output is empty.",
+          "Marketing opt-in: no rows had an affirmative value (e.g. yes/true/1); output is empty.",
         );
       } else {
         warnings.push(
-          `Marketing opt-in: kept rows with an affirmative Yes only (removed ${marketingOptInRemoved}).`,
+          `Marketing opt-in: kept rows with an affirmative value only (removed ${marketingOptInRemoved}).`,
         );
       }
     }
