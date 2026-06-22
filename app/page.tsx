@@ -126,7 +126,7 @@ function buildSummaryReport(result: CleanResult, fileName: string): string {
     FULL_NAME_SPLIT_KEY,
     "Email",
     "Phone",
-    "Marketing opt-in (Yes only)",
+    "Marketing opt-in (Yes + No Preference)",
   ];
   const mappingKeys = Object.keys(stats.detectedColumns);
   const orderedKeys = [

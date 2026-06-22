@@ -22,8 +22,8 @@
 /** Key used in `detectedColumns` when a full-name column is split. */
 export const FULL_NAME_SPLIT_KEY = "Full Name (split)" as const;
 
-/** Key when rows are filtered by restaurant marketing opt-in (Yes only). */
-export const MARKETING_OPT_IN_FILTER_KEY = "Marketing opt-in (Yes only)" as const;
+/** Key when rows are filtered by restaurant marketing opt-in (Yes + No Preference). */
+export const MARKETING_OPT_IN_FILTER_KEY = "Marketing opt-in (Yes + No Preference)" as const;
 
 /** Score bonus applied to exact alias matches so they always beat fuzzy matches. */
 const EXACT_MATCH_BONUS = 10;
@@ -329,6 +329,15 @@ function detectMarketingOptInColumn(headers: string[]): string | null {
   return bestScore > 0 ? best : null;
 }
 
+/**
+ * True when the cell indicates no preference was collected (e.g. "No Preference Collected").
+ * These rows are kept alongside affirmative opt-ins.
+ */
+export function isNoPreferenceOptInValue(raw: string): boolean {
+  const v = raw.trim().toLowerCase().replace(/\s+/g, " ");
+  return v === "no preference collected" || v === "no preference";
+}
+
 /** True when the cell clearly indicates opt-in Yes (flexible phrasing, not substring traps like "eyes"). */
 export function isAffirmativeOptInValue(raw: string): boolean {
   const v = raw.trim();
@@ -389,18 +398,19 @@ export function cleanCsvData(rawRows: Record<string, string>[]): CleanResult {
     usedHeaders.add(marketingOptInCol);
     detectedColumns[MARKETING_OPT_IN_FILTER_KEY] = marketingOptInCol;
     const before = rawRows.length;
-    rowsToClean = rawRows.filter((raw) =>
-      isAffirmativeOptInValue(getCell(raw, marketingOptInCol)),
-    );
+    rowsToClean = rawRows.filter((raw) => {
+      const cell = getCell(raw, marketingOptInCol);
+      return isAffirmativeOptInValue(cell) || isNoPreferenceOptInValue(cell);
+    });
     marketingOptInRemoved = before - rowsToClean.length;
     if (marketingOptInRemoved > 0) {
       if (rowsToClean.length === 0) {
         warnings.push(
-          "Marketing opt-in: no rows had an affirmative value (e.g. yes/true/1); output is empty.",
+          "Marketing opt-in: no rows had an affirmative value or No Preference; output is empty.",
         );
       } else {
         warnings.push(
-          `Marketing opt-in: kept rows with an affirmative value only (removed ${marketingOptInRemoved}).`,
+          `Marketing opt-in: kept rows with Yes or No Preference Collected (removed ${marketingOptInRemoved}).`,
         );
       }
     }
